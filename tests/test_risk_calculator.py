@@ -18,6 +18,42 @@ def test_low_risk_accept():
     assert result["flags"] == []
 
 
+def test_low_risk_accept_high_seismic_zone_adds_fifteen_points():
+    features = {
+        "roof_age_years": 8,
+        "construction_type": "Fire Resistive",
+        "sprinkler_system": "Y",
+        "occupancy_type": "Office",
+        "cat_zone": "None",
+        "distance_to_coast_miles": 50,
+        "distance_to_fire_zone_miles": 40,
+        "prior_claims_count_5yr": 1,
+        "tiv": 8_000_000,
+        "seismic_zone": "V",
+    }
+    result = risk_score_calculator(features)
+    assert result["score"] == 15
+    assert "high_seismic_zone" in result["flags"]
+
+
+def test_low_risk_accept_default_seismic_zone_preserves_score():
+    features = {
+        "roof_age_years": 8,
+        "construction_type": "Fire Resistive",
+        "sprinkler_system": "Y",
+        "occupancy_type": "Office",
+        "cat_zone": "None",
+        "distance_to_coast_miles": 50,
+        "distance_to_fire_zone_miles": 40,
+        "prior_claims_count_5yr": 1,
+        "tiv": 8_000_000,
+        "seismic_zone": "II",
+    }
+    result = risk_score_calculator(features)
+    assert result["score"] == 0
+    assert "high_seismic_zone" not in result["flags"]
+
+
 def test_mid_risk_refer():
     features = {
         "roof_age_years": 25,

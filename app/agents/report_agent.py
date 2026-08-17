@@ -12,24 +12,9 @@ def generate_memo(state: dict) -> str:
     """Generate a polished markdown memo using a senior underwriting persona."""
     # Gracefully fall back if API key is not available
     if not GEMINI_API_KEY:
-        return f"""
-## Property Summary
-- Property ID: {state.get('property_id')}
-- Address: {state.get('raw_input', {}).get('address', '')}
-- City: {state.get('raw_input', {}).get('city', '')}
+        state["memo_error"] = "GEMINI_API_KEY is not set"
+        return ""
 
-## Key Risk Factors
-{', '.join(state.get('risk_flags', [])) or 'No specific risk flags identified.'}
-
-## Decision
-**{state.get('decision', 'PENDING')}**
-
-Risk Score: {state.get('risk_score', 0)}/100
-
-## Suggested Next Steps
-Continue with standard underwriting review process.
-"""
-    
     try:
         client = genai.Client(api_key=GEMINI_API_KEY)
         guidelines = toon_encode([{"chunk": chunk} for chunk in state.get("guideline_chunks", [])])
@@ -88,21 +73,5 @@ Strict grounding rules:
         print(f"[generate_memo] EXCEPTION: {type(e).__name__}: {str(e)}")
         import traceback
         traceback.print_exc()
-        # Fall back to template if API call fails
-        return f"""
-## Property Summary
-- Property ID: {state.get('property_id')}
-- Address: {state.get('raw_input', {}).get('address', '')}
-- City: {state.get('raw_input', {}).get('city', '')}
-
-## Key Risk Factors
-{', '.join(state.get('risk_flags', [])) or 'No specific risk flags identified.'}
-
-## Decision
-**{state.get('decision', 'PENDING')}**
-
-Risk Score: {state.get('risk_score', 0)}/100
-
-## Suggested Next Steps
-Continue with standard underwriting review process.
-"""
+        state["memo_error"] = f"{type(e).__name__}: {str(e)}"
+        return ""

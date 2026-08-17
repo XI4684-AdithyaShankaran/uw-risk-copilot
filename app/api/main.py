@@ -10,6 +10,7 @@ from fastapi.responses import JSONResponse
 from app.agents.graph import run_graph
 from app.config import DB_PATH
 from app.db import fetch_history, init_db, save_submission
+from app.schemas import indicative_product_segment
 
 app = FastAPI(title="UW Risk Copilot")
 
@@ -48,6 +49,9 @@ async def submit_underwriting(
     num_stories: int = Form(...),
     sprinkler_system: str = Form(...),
     cat_zone: str = Form(...),
+    policy_type: str | None = Form(default=None),
+    seismic_zone: str = Form(default="II"),
+    rsmd_cover: bool | None = Form(default=None),
     distance_to_coast_miles: float = Form(...),
     distance_to_fire_zone_miles: float = Form(...),
     prior_claims_count_5yr: int = Form(...),
@@ -56,6 +60,8 @@ async def submit_underwriting(
     submission_date: str = Form(...),
     image: UploadFile | None = File(default=None),
 ) -> dict[str, Any]:
+    total_value_at_risk_inr = tiv
+    derived_policy_type = indicative_product_segment(total_value_at_risk_inr)
     raw_input = {
         "property_id": property_id,
         "address": address,
@@ -73,6 +79,10 @@ async def submit_underwriting(
         "num_stories": num_stories,
         "sprinkler_system": sprinkler_system,
         "cat_zone": cat_zone,
+        "policy_type": derived_policy_type,
+        "total_value_at_risk_inr": total_value_at_risk_inr,
+        "seismic_zone": seismic_zone,
+        "rsmd_cover": rsmd_cover,
         "distance_to_coast_miles": distance_to_coast_miles,
         "distance_to_fire_zone_miles": distance_to_fire_zone_miles,
         "prior_claims_count_5yr": prior_claims_count_5yr,
@@ -88,10 +98,18 @@ async def submit_underwriting(
         image_bytes = await image.read()
         with open(image_path, "wb") as out:
             out.write(image_bytes)
+        print("IMAGE_RECEIVED=true")
+        print(f"IMAGE_SIZE_BYTES={len(image_bytes)}")
+        print(f"IMAGE_MIME_TYPE={image.content_type or 'unknown'}")
         print(f"[POST /underwrite/submit] IMAGE RECEIVED: {image.filename}, SIZE: {len(image_bytes)} bytes")
 
     result = run_graph(raw_input, image_path=image_path)
     result["raw_input"] = raw_input
+    result["policy_type"] = derived_policy_type
+    result["total_value_at_risk_inr"] = total_value_at_risk_inr
+    result["ai_memo_status"] = "Available" if result.get("memo_markdown") else "Unavailable"
+    result["ai_memo_reason"] = result.get("memo_error") if not result.get("memo_markdown") else ""
+    print(f"FINAL_EXTRACTED_FEATURE_KEYS={sorted(result.get('extracted_features', {}).keys())}")
     save_submission(result)
     return result
 

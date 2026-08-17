@@ -10,6 +10,7 @@ def risk_score_calculator(features: dict) -> dict:
         "construction": 0,
         "sprinkler": 0,
         "cat_zone": 0,
+        "seismic_zone": 0,
         "coastal": 0,
         "wildland": 0,
         "loss_history": 0,
@@ -43,6 +44,11 @@ def risk_score_calculator(features: dict) -> dict:
         score += 20
         breakdown["cat_zone"] = 20
         flags.append("high_cat_zone_exposure")
+
+    if features.get("seismic_zone", "II") in ("IV", "V"):
+        score += 15
+        breakdown["seismic_zone"] = 15
+        flags.append("high_seismic_zone")
 
     if float(features.get("distance_to_coast_miles", 0)) < 1:
         score += 15

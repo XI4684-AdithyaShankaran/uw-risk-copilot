@@ -27,6 +27,7 @@ CONSTRUCTION_TYPES = [
 ]
 OCCUPANCY_TYPES = ["Office", "Retail", "Warehouse", "Industrial", "Mixed-Use", "Multifamily"]
 CAT_ZONES = ["Wind", "Hail", "Wildfire", "Flood", "Earthquake", "None"]
+POLICY_TYPES = ["SFSP", "Bharat Sookshma Udyam Suraksha", "Bharat Laghu Udyam Suraksha"]
 
 
 def build_properties_csv(path: Path, count: int = 300) -> None:
@@ -35,9 +36,11 @@ def build_properties_csv(path: Path, count: int = 300) -> None:
         construction = CONSTRUCTION_TYPES[i % len(CONSTRUCTION_TYPES)]
         occupancy = OCCUPANCY_TYPES[i % len(OCCUPANCY_TYPES)]
         cat_zone = CAT_ZONES[i % len(CAT_ZONES)]
+        policy_type = POLICY_TYPES[i % len(POLICY_TYPES)]
+        seismic_zone = "V" if i % 25 == 0 else "IV" if i % 15 == 0 else "II" if i % 3 else "III"
         roof_age = (i * 7) % 45
         prior_claims = (i * 3) % 6
-        tiv = 2_000_000 + ((i * 137) % 55_000_000)
+        total_value_at_risk_inr = 2_000_000 + ((i * 137) % 55_000_000)
         row = {
             "property_id": f"PROP-{i:04d}",
             "address": fake.street_address(),
@@ -55,11 +58,14 @@ def build_properties_csv(path: Path, count: int = 300) -> None:
             "num_stories": 1 + (i % 12),
             "sprinkler_system": "Y" if i % 3 else "N",
             "cat_zone": cat_zone,
+            "policy_type": policy_type,
+            "seismic_zone": seismic_zone,
+            "total_value_at_risk_inr": round(float(total_value_at_risk_inr), 2),
             "distance_to_coast_miles": round((i * 13) % 80 + (0.5 * (i % 3)), 1),
             "distance_to_fire_zone_miles": round((i * 11) % 50 + (0.4 * (i % 4)), 1),
             "prior_claims_count_5yr": prior_claims,
             "prior_claims_total_amount": round(float(prior_claims) * 12000 + (i * 450), 2),
-            "tiv": round(float(tiv), 2),
+            "tiv": round(float(total_value_at_risk_inr), 2),
             "submission_date": fake.date_between(start_date='-2y', end_date='today').isoformat(),
         }
         rows.append(row)
@@ -81,6 +87,9 @@ def build_properties_csv(path: Path, count: int = 300) -> None:
         "num_stories",
         "sprinkler_system",
         "cat_zone",
+        "policy_type",
+        "seismic_zone",
+        "total_value_at_risk_inr",
         "distance_to_coast_miles",
         "distance_to_fire_zone_miles",
         "prior_claims_count_5yr",
@@ -156,7 +165,7 @@ def seed_sqlite_properties(path: Path) -> None:
 
 def build_underwriting_guidelines_pdf(path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    
+
     # Create PDF with proper text wrapping using SimpleDocTemplate and Paragraphs
     doc = SimpleDocTemplate(
         str(path),
@@ -166,7 +175,7 @@ def build_underwriting_guidelines_pdf(path: Path) -> None:
         topMargin=72,
         bottomMargin=72,
     )
-    
+
     # Get default styles and create custom title style
     styles = getSampleStyleSheet()
     title_style = ParagraphStyle(
@@ -185,40 +194,40 @@ def build_underwriting_guidelines_pdf(path: Path) -> None:
         spaceAfter=12,
         alignment=4,  # Justified
     )
-    
+
     # Build the story (list of flowable objects)
     story = []
-    
+
     # Title
     story.append(Paragraph("Underwriting Guidelines & Appetite", title_style))
     story.append(Spacer(1, 0.2 * inch))
-    
+
     # Content sections with proper wrapping
     sections = [
-        ("1. Construction & Occupancy Risk", 
+        ("1. Construction & Occupancy Risk",
          "Frame construction and higher-hazard occupancies such as Warehouse and Industrial merit additional underwriting scrutiny. Buildings without sprinkler coverage in these occupancies warrant elevated risk consideration. The presence or absence of active fire suppression systems directly impacts the underwriting decision. Properties with combustible framing in high-value occupancies require careful evaluation of replacement cost and loss potential."),
-        
+
         ("2. Roof Age Thresholds",
          "Roofs older than 20 years are considered aging and may trigger referral reviews. Roofs older than 30 years warrant stronger concern and are likely to require replacement planning or mitigation before renewal. The age of the roof significantly affects both loss frequency and severity. Modern roofing materials provide better wind and weather resistance compared to aged materials. Documentation of recent roof maintenance or replacement is favorable for underwriting decisions."),
-        
+
         ("3. CAT Zone Appetite",
          "Exposure in wildfire, flood, or wind zones materially increases risk and is not generally considered low risk. Proximity to coast or interface areas compounds this concern. Properties located within designated catastrophe exposure zones require enhanced scrutiny and may command higher premiums or stricter underwriting requirements. Natural disaster exposure is a primary driver of overall risk classification."),
-        
+
         ("4. Prior Loss History Appetite",
          "Properties with more than two prior claims in five years suggest a negative loss pattern and should be reviewed for adverse loss history and pricing implications. Frequency of losses is more concerning than severity in many cases. A history of multiple claims indicates potential maintenance issues, operational risks, or problematic property conditions that warrant close attention during underwriting."),
-        
+
         ("5. TIV Concentration Limits",
          "Total insured value above USD 20 million requires enhanced risk review because of concentration exposure and more significant loss severity. Large single-location concentrations of value create potential for catastrophic loss. Properties with very high TIV require additional scrutiny regarding building condition, occupancy hazards, and business continuity considerations."),
-        
+
         ("6. Referral vs Decline Criteria",
          "Scores from 0 to 30 are generally acceptable for approval. Scores 31 to 60 warrant referral for further review by senior underwriters. Scores 61 to 84 are decline candidates where mitigation measures may reduce the exposure and allow for reconsideration. Scores 85 to 100 are auto-decline based on the combined risk profile and require exceptional circumstances for override. The system uses deterministic underwriting rules to produce a score from 0 to 100, with additive rules applied consistently across all applications."),
     ]
-    
+
     for section_title, section_text in sections:
         story.append(Paragraph(section_title, styles['Heading2']))
         story.append(Paragraph(section_text, body_style))
         story.append(Spacer(1, 0.1 * inch))
-    
+
     # Build the PDF
     doc.build(story)
 

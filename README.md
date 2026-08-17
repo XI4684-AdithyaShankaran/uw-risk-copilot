@@ -44,6 +44,35 @@ UW Risk Copilot is a local commercial-property underwriting prototype. FastAPI r
 - `app/ui/streamlit_app.py` submits property data and images, then renders the returned memo and debug response.
 - Test images are stored under `data/raw/images/`; local SQLite submission history and the Chroma index remain under `data/`.
 
+## Architecture
+
+Two LangGraph-orchestrated agents:
+
+- **Risk Agent** — intake → (optional) vision feature extraction → guideline retrieval (RAG) →
+  deterministic risk scoring → comparable-property lookup → decision synthesis. Comparable
+  lookup is skipped on the auto-decline fast path (score ≥ 85) as an automation shortcut.
+- **Report Agent** — takes the Risk Agent's output and generates the underwriting memo,
+  grounded strictly in the deterministic score/flags/decision and retrieved guideline text —
+  it narrates, it doesn't override.
+
+Deterministic risk bands: 0–30 Accept · 31–60 Refer · 61–84 Decline (mitigation possible) · 85–100 Auto-Decline.
+
+## Tests
+
+```bash
+python -m pytest tests/test_risk_calculator.py -v
+```
+
+Covers the deterministic scoring thresholds with hand-verified expected values.
+
+## Known limitations
+
+- Uses `gemini-3-flash-preview` (preview channel) for vision and reasoning — `gemini-2.5-flash`
+  was deprecated for new API keys during development; not GA-pinned, may change without notice.
+- Guideline RAG is grounded to a single synthetic underwriting-guidelines PDF, not real carrier
+  policy documents.
+- Property and claims data are synthetic (Faker-generated), not real underwriting records.
+
 ## Notes
 
 - Set `GEMINI_API_KEY` only in `.env`; do not commit it.
