@@ -5,6 +5,7 @@
 AI-assisted commercial property underwriting prototype.
 
 The system combines:
+
 - deterministic underwriting rules
 - guideline retrieval using Chroma/RAG
 - Gemini-based report generation
@@ -46,6 +47,7 @@ Backend:
 ```bash
 uvicorn app.api.main:app --reload
 ```
+
 Streamlit:
 
 ```bash
