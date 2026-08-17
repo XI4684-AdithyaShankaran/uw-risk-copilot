@@ -87,3 +87,66 @@ def test_high_risk_auto_decline():
     assert result["score"] >= 85
     assert "roof_replacement_likely" in result["flags"]
     assert "auto_decline" not in result["flags"]
+
+
+def mitigation_features():
+    return {
+        "roof_age_years": 8,
+        "construction_type": "Fire Resistive",
+        "sprinkler_system": "N",
+        "occupancy_type": "Office",
+        "cat_zone": "None",
+        "distance_to_coast_miles": 50,
+        "distance_to_fire_zone_miles": 40,
+        "prior_claims_count_5yr": 1,
+        "tiv": 8_000_000,
+        "fire_alarm": None,
+        "flood_protection": None,
+    }
+
+
+def test_prototype_mitigation_baseline_with_none_fields_preserves_score():
+    result = risk_score_calculator(mitigation_features())
+    assert result["score"] == 0
+    assert result["prototype_mitigation_model"]["mitigation_benefits"] == []
+    assert result["prototype_mitigation_model"]["risk_adjusted_view"] > result["score"]
+
+
+def test_prototype_mitigation_sprinkler():
+    features = mitigation_features()
+    features["sprinkler_system"] = "Y"
+    result = risk_score_calculator(features)
+    assert result["score"] == 0
+    assert {item["factor"] for item in result["prototype_mitigation_model"]["mitigation_benefits"]} == {"sprinkler"}
+    assert result["prototype_mitigation_model"]["mitigation_benefit"] == 40
+    baseline = risk_score_calculator(mitigation_features())
+    assert result["prototype_mitigation_model"]["risk_adjusted_view"] < baseline["prototype_mitigation_model"]["risk_adjusted_view"]
+
+
+def test_prototype_mitigation_fire_alarm():
+    features = mitigation_features()
+    features["fire_alarm"] = True
+    result = risk_score_calculator(features)
+    assert result["score"] == 0
+    assert result["prototype_mitigation_model"]["mitigation_benefits"] == [{"factor": "fire_alarm", "benefit": 20}]
+
+
+def test_prototype_mitigation_flood_protection():
+    features = mitigation_features()
+    features["flood_protection"] = True
+    result = risk_score_calculator(features)
+    assert result["score"] == 0
+    assert result["prototype_mitigation_model"]["mitigation_benefit"] == 25
+
+
+def test_prototype_mitigation_combined_and_roof_age_adjustments():
+    features = mitigation_features()
+    features.update({"sprinkler_system": "Y", "fire_alarm": True, "flood_protection": True, "roof_age_years": 25})
+    result = risk_score_calculator(features)
+    model = result["prototype_mitigation_model"]
+    assert result["score"] == 15
+    assert model["mitigation_benefit"] == 85
+    assert {item["factor"] for item in model["mitigation_benefits"]} == {"sprinkler", "fire_alarm", "flood_protection"}
+    assert {item["factor"]: item["adjustment"] for item in model["protection_adjustments"]} == {
+        "sprinkler": -40, "fire_alarm": -20, "flood_protection": -25, "roof_age": 2,
+    }

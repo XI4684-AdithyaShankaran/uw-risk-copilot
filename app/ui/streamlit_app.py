@@ -43,9 +43,9 @@ with new_submission_tab:
             longitude = st.number_input("Longitude", value=-122.4194, format="%.6f", key="submission_longitude")
             construction_type = st.selectbox("Construction Type", ["Frame", "Joisted Masonry", "Non-Combustible", "Masonry Non-Combustible", "Fire Resistive"])
             year_built = st.number_input("Year Built", min_value=1900, max_value=2100, value=1995, step=1)
-            roof_type = st.text_input("Roof Type", value="Built-up")
-            roof_age_years = st.number_input("Roof Age Years", min_value=0, max_value=100, value=15)
-            square_footage = st.number_input("Square Footage", min_value=1000, max_value=500000, value=120000, step=100)
+            roof_type = st.text_input("Roof Type", value="") or None
+            roof_age_years = st.number_input("Roof Age Years", min_value=0, max_value=100, value=None, step=1)
+            square_footage = st.number_input("Square Footage", min_value=1, max_value=10000000, value=120000, step=100)
         with col2:
             occupancy_type = st.selectbox("Occupancy Type", ["Office", "Retail", "Warehouse", "Industrial", "Mixed-Use", "Multifamily", "Restaurant"], key="submission_occupancy_type")
             num_stories = st.number_input("Number of Stories", min_value=1, max_value=80, value=4)
@@ -53,11 +53,11 @@ with new_submission_tab:
             cat_zone = st.selectbox("CAT Zone", ["Wind", "Hail", "Wildfire", "Flood", "Earthquake", "None"])
             rsmd_cover = st.checkbox("Riot / Strike / Malicious Damage (RSMD) Cover")
             seismic_zone = st.selectbox("Seismic Zone", ["II", "III", "IV", "V"], index=0)
-            distance_to_coast_miles = st.number_input("Distance to Coast (mi)", min_value=0.0, max_value=1000.0, value=20.0)
-            distance_to_fire_zone_miles = st.number_input("Distance to Fire Zone (mi)", min_value=0.0, max_value=1000.0, value=15.0)
-            prior_claims_count_5yr = st.number_input("Prior Claims (5Y)", min_value=0, max_value=20, value=1)
-            prior_claims_total_amount = st.number_input("Prior Claims Total Amount", min_value=0.0, max_value=50000000.0, value=50000.0)
-            tiv = st.number_input("Total Value at Risk (₹)", min_value=0.0, max_value=1000000000.0, value=5500000.0)
+            distance_to_coast_miles = st.number_input("Distance to Coast (mi)", min_value=0.0, max_value=1000.0, value=None, step=0.1)
+            distance_to_fire_zone_miles = st.number_input("Distance to Fire Zone (mi)", min_value=0.0, max_value=1000.0, value=None, step=0.1)
+            prior_claims_count_5yr = st.number_input("Prior Claims (5Y)", min_value=0, max_value=20, value=None, step=1)
+            prior_claims_total_amount = st.number_input("Prior Claims Total Amount", min_value=0.0, max_value=50000000.0, value=None, step=100.0)
+            tiv = st.number_input("Total Value at Risk (₹)", min_value=0.0, max_value=100000000000.0, value=5500000.0)
             if tiv <= 50_000_000:
                 indicative_segment = "Bharat Sookshma Udyam Suraksha"
             elif tiv <= 500_000_000:
@@ -86,7 +86,7 @@ with new_submission_tab:
 
     if submitted:
         current_year = pd.Timestamp.now().year
-        if roof_age_years < 0:
+        if roof_age_years is not None and roof_age_years < 0:
             st.error("Roof age must be zero or greater.")
             st.stop()
         if square_footage <= 0:
@@ -114,7 +114,7 @@ with new_submission_tab:
             "construction_type": construction_type,
             "year_built": int(year_built),
             "roof_type": roof_type,
-            "roof_age_years": int(roof_age_years),
+            "roof_age_years": int(roof_age_years) if roof_age_years is not None else None,
             "square_footage": int(square_footage),
             "occupancy_type": occupancy_type,
             "num_stories": int(num_stories),
@@ -122,10 +122,10 @@ with new_submission_tab:
             "cat_zone": cat_zone,
             "rsmd_cover": rsmd_cover,
             "seismic_zone": seismic_zone,
-            "distance_to_coast_miles": float(distance_to_coast_miles),
-            "distance_to_fire_zone_miles": float(distance_to_fire_zone_miles),
-            "prior_claims_count_5yr": int(prior_claims_count_5yr),
-            "prior_claims_total_amount": float(prior_claims_total_amount),
+            "distance_to_coast_miles": float(distance_to_coast_miles) if distance_to_coast_miles is not None else None,
+            "distance_to_fire_zone_miles": float(distance_to_fire_zone_miles) if distance_to_fire_zone_miles is not None else None,
+            "prior_claims_count_5yr": int(prior_claims_count_5yr) if prior_claims_count_5yr is not None else None,
+            "prior_claims_total_amount": float(prior_claims_total_amount) if prior_claims_total_amount is not None else None,
             "tiv": float(tiv),
             "submission_date": str(submission_date),
         }

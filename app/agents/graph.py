@@ -44,6 +44,7 @@ def score_risk_node(state: UWState) -> UWState:
     state["risk_score"] = int(score_data["score"])
     state["risk_flags"] = score_data["flags"]
     state["risk_breakdown"] = score_data["breakdown"]
+    state["prototype_mitigation_model"] = score_data["prototype_mitigation_model"]
     return state
 
 
@@ -173,6 +174,7 @@ def run_graph(raw_input: dict, image_path: str | None = None) -> UWState:
         "risk_score": 0,
         "risk_flags": [],
         "risk_breakdown": {},
+        "prototype_mitigation_model": {},
         "comparables": [],
         "decision": "Accept",
         "rationale": "",

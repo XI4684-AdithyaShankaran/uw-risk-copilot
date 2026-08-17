@@ -12,6 +12,7 @@ class UWState(TypedDict):
     risk_score: int
     risk_flags: list[str]
     risk_breakdown: dict
+    prototype_mitigation_model: dict
     comparables: list[dict]
     decision: str
     rationale: str
