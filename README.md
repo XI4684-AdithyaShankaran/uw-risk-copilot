@@ -1,79 +1,167 @@
-# UW Risk Copilot
+# UW Risk Copilot — Commercial Property Underwriting Backend
 
-UW Risk Copilot is a local commercial-property underwriting prototype. FastAPI receives multipart property submissions, Streamlit provides the working-user interface, LangGraph coordinates extraction, retrieval, scoring, comparables, and reporting, and Gemini supplies image interpretation and underwriting narrative. The deterministic risk calculator, Chroma retrieval over a locally built underwriting-guidelines PDF index, attached-image feature extraction, and generated referral memo have been exercised locally; this remains a development prototype, not a production underwriting system.
+A FastAPI + LangGraph backend providing deterministic underwriting scoring, Gemini Vision property-image analysis, RAG-grounded underwriting evidence retrieval, and AI-assisted structured underwriting memos for Indian commercial property.
 
-## Setup
+**The React frontend lives in `../propertyRiskAssesment/`.**
 
-1. Create and activate a virtual environment:
-   ```bash
-   python -m venv .venv
-   source .venv/bin/activate   # Linux/macOS
-   .venv\Scripts\activate      # Windows
-   ```
-2. Install dependencies:
-   ```bash
-   pip install -r requirements.txt
-   ```
-3. Copy the example env file and set your key:
-   ```bash
-   cp .env.example .env          # Linux/macOS/WSL
-   # Windows PowerShell: Copy-Item .env.example .env
-   ```
-   Then edit `.env` and set:
-   ```env
-   GEMINI_API_KEY=your_api_key_here
-   ```
-   You can create a free key at https://aistudio.google.com.
-4. Build the Chroma vector store for underwriting guidelines:
-   ```bash
-   python scripts/build_vectorstore.py
-   ```
-5. Start the FastAPI backend in one terminal:
-   ```bash
-   uvicorn app.api.main:app --reload
-   ```
-6. Start the Streamlit UI in a second terminal:
-   ```bash
-   streamlit run app/ui/streamlit_app.py
-   ```
-
-## Working Flow
-
-- `scripts/build_vectorstore.py` embeds the underwriting-guidelines PDF into Chroma.
-- `app/api/main.py` exposes multipart submission and history endpoints.
-- `app/ui/streamlit_app.py` submits property data and images, then renders the returned memo and debug response.
-- Test images are stored under `data/raw/images/`; local SQLite submission history and the Chroma index remain under `data/`.
+---
 
 ## Architecture
 
-Two LangGraph-orchestrated agents:
+```
+React SPA
+  └── POST /underwrite/submit (multipart: form fields + optional image)
+       └── LangGraph pipeline:
+             intake
+             └── Vision (Gemini): image → structured observations
+             └── RAG (Chroma + Gemini embedding): guidelines retrieval
+             └── Risk scoring (Python): deterministic score + flags
+             └── Reference properties: multi-attribute synthetic-reference ranking
+             └── AI Memo (Gemini): grounded structured memo
+  └── POST /underwrite/preview   (live deterministic preview, no DB write)
+  └── GET  /underwrite/history   (portfolio dashboard data)
+  └── GET  /underwrite/history/{id}          (submission detail)
+  └── GET  /underwrite/history/{id}/report.pdf   (PDF report)
+```
 
-- **Risk Agent** — intake → (optional) vision feature extraction → guideline retrieval (RAG) →
-  deterministic risk scoring → comparable-property lookup → decision synthesis. Comparable
-  lookup is skipped on the auto-decline fast path (score ≥ 85) as an automation shortcut.
-- **Report Agent** — takes the Risk Agent's output and generates the underwriting memo,
-  grounded strictly in the deterministic score/flags/decision and retrieved guideline text —
-  it narrates, it doesn't override.
+**Authoritative decision** is always Python-deterministic:
+- 0–30 → Accept
+- 31–60 → Refer
+- 61–84 → Decline (mitigation possible)
+- 85–100 → Auto-Decline
 
-Deterministic risk bands: 0–30 Accept · 31–60 Refer · 61–84 Decline (mitigation possible) · 85–100 Auto-Decline.
+**Gemini** provides: Vision observations, RAG embeddings, structured AI memo (explanation only — cannot override Python decision).
+
+---
+
+## Setup
+
+### 1. Python environment
+
+```bash
+python -m venv .venv
+source .venv/bin/activate       # Linux/macOS/WSL
+# .venv\Scripts\activate        # Windows PowerShell
+pip install -r requirements.txt
+```
+
+### 2. Gemini API key
+
+```bash
+cp .env.example .env
+# Edit .env and set:
+# GEMINI_API_KEY=your_key_here
+```
+
+Free key: https://aistudio.google.com
+
+### 3. Start the backend
+
+```bash
+uvicorn app.api.main:app --host 0.0.0.0 --port 8000 --reload
+```
+
+The SQLite schema and reference-property table initialise automatically on first start. The checked-in Chroma vectorstore under `data/vectorstore/` must be present for RAG retrieval.
+
+---
+
+## Data
+
+| Path | Description |
+|---|---|
+| `data/raw/underwriting_guidelines.pdf` | Source PDF for RAG index |
+| `data/raw/properties.csv` | 300 synthetic reference properties for comparables |
+| `data/vectorstore/` | Chroma index (auto-built from PDF at startup) |
+| `data/db/uw_risk.db` | SQLite: submissions + reference properties |
+| `data/raw/images/` | Demo property images (Tidel Park, Chennai) |
+
+> **Note**: The 300 reference properties are synthetic and are **not** verified market comparables. They are labelled "Reference Properties" throughout the application.
+
+### Demo image provenance
+
+| File | Source / usage |
+|---|---|
+| `Tidel_park,_Chennai.jpg`, `Chennai.tidelpark.jpg` | TIDEL Park demo images retained for the Chennai submission |
+| `Bandra-Kurla-Complex-Mumbai.jpg` | [Wikimedia Commons BKC skyline](https://commons.wikimedia.org/wiki/File:Bandra-Kurla-Complex-Mumbai-Maharashtra-India.jpg) |
+| `ILFS-Bandra-Kurla-Complex-Mumbai.jpg` | [Wikimedia Commons BKC office building](https://commons.wikimedia.org/wiki/File:IL%26FS_-_Bandra_Kurla_Complex,_Mumbai.jpg), used by the Mumbai Accept demo |
+| `Cotton-Green-Mill-Mumbai.jpg` | [Public-domain Wikimedia Commons image](https://commons.wikimedia.org/wiki/File:Cotton_green_mill_mumbai.jpg), “Cotton mill textile mill, Colaba,” dated 1910; used by the Auto-Decline demo |
+
+Submitted images are persisted with the submission, analyzed by Vision, displayed in the result workflow, and embedded in the generated PDF. Image observations remain non-authoritative evidence; manual/scored facts are controlled separately.
+
+---
 
 ## Tests
 
 ```bash
-python -m pytest tests/test_risk_calculator.py -v
+# Full suite (34 tests)
+pytest tests/ -v
+
+# Individual files
+pytest tests/test_risk_calculator.py -v     # 13 deterministic scoring tests
+pytest tests/test_report_agent.py -v        # 8 AI memo contract tests
+pytest tests/test_vision_extract.py -v      # 10 Vision pipeline tests
+pytest tests/test_database_lifecycle.py -v  # 3 DB + PDF/image tests
 ```
 
-Covers the deterministic scoring thresholds with hand-verified expected values.
+---
+
+## Scoring model
+
+All authoritative score weights are defined as named constants in `app/tools/risk_calculator.py`:
+
+| Factor | Points | Condition |
+|---|---|---|
+| Roof age | +25 / +15 | > 30 yr / > 20 yr |
+| Frame construction | +10 | combustible frame |
+| No sprinkler (warehouse/industrial) | +10 | high-hazard occupancy |
+| CAT zone (Wind/Flood/Wildfire) | +20 | primary CAT perils |
+| CAT zone (Hail/Earthquake) | 0 | captured, not scored (no calibrated rule) |
+| Seismic zone IV/V | +15 | high-seismic zone |
+| Coastal proximity | +15 | < 1 mile to coast |
+| Wildland-urban interface | +15 | < 1 mile to fire zone |
+| Adverse loss history | +15 | > 2 claims in 5 yr |
+| High TIV | +5 | TIV > ₹20M |
+
+> These are **prototype calibrations**, not filed Indian insurance rating rules.
+
+### Product segments (IRDAI-aligned)
+
+| TIV | Segment |
+|---|---|
+| ≤ ₹50M | Bharat Sookshma Udyam Suraksha |
+| ≤ ₹500M | Bharat Laghu Udyam Suraksha |
+| > ₹500M | Larger-risk / commercial property segment |
+
+---
+
+## AI memo contract
+
+`report_agent.py` produces a 6-field validated JSON memo:
+
+```
+property_summary     list[str]   — grounded property facts
+key_risk_factors     list[str]   — deterministic risk flags only
+coverage_review      list[str]   — requested coverage review (not exposure)
+decision             str         — must equal deterministic decision
+rationale            str         — AI explanation
+suggested_next_steps list[str]   — actionable items
+```
+
+Validation rules (mechanical, not NLP):
+- Decision must exactly match `decision_from_score(risk_score)`
+- Key risk factors must reference actual `risk_flags`
+- Coverage review must not reference unrequested perils
+- Coverage review must not contain invented monetary amounts, rates, or regulatory mandates
+- Roof age fabrication guard (no invented age claims when `roof_age_years = None`)
+
+---
 
 ## Known limitations
 
-- Uses `gemini-3-flash-preview` (preview channel) for vision and reasoning — `gemini-2.5-flash`
-  was deprecated for new API keys during development; not GA-pinned, may change without notice.
-- Guideline RAG is grounded to a single synthetic underwriting-guidelines PDF, not real carrier
-  policy documents.
-- Property and claims data are synthetic (Faker-generated), not real underwriting records.
-
-## Notes
-
-- Set `GEMINI_API_KEY` only in `.env`; do not commit it.
-- The deterministic risk calculation is intentionally separate from Gemini-generated narrative output.
+- Uses `gemini-3-flash-preview` — preview channel, not GA-pinned
+- Gemini requests are bounded to 60 seconds and fail closed; Python decisions remain available if AI is unavailable
+- Reference properties are synthetic (Faker-generated US-style addresses)
+- Scoring weights are prototype calibrations, not insurer loss-cost data
+- RAG grounded to one generic commercial-property guidelines PDF, not carrier-specific documents
+- Seismic zone II/III scored equally (0 pts), IV/V scored equally (+15 pts) — prototype 2-tier simplification; BIS IS 1893 defines four distinct zones
+- The PoC demonstrates workflow speed, consistency, evidence capture, and decision support. It does not empirically prove loss-ratio reduction or pricing accuracy without longitudinal insurer outcomes

@@ -21,3 +21,4 @@ GUIDELINES_PDF = RAW_DIR / "underwriting_guidelines.pdf"
 GEMINI_MODEL_NAME = "models/gemini-3-flash-preview"
 GEMINI_EMBEDDING_MODEL_NAME = "models/gemini-embedding-001"
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
+GEMINI_TIMEOUT_MS = 60_000

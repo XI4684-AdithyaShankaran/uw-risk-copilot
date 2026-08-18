@@ -1,16 +1,9 @@
 from __future__ import annotations
 
 from datetime import date
-from typing import Any, Literal
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
-
-DECISION_THRESHOLDS = {
-    "Accept": (0, 30),
-    "Refer": (31, 60),
-    "Decline (mitigation possible)": (61, 84),
-    "Auto-Decline": (85, 100),
-}
 
 
 class PropertySubmission(BaseModel):
@@ -60,6 +53,7 @@ class PropertySubmission(BaseModel):
     policy_type: Literal["SFSP", "Bharat Sookshma Udyam Suraksha", "Bharat Laghu Udyam Suraksha", "Larger-risk/commercial property segment"] | None = None
     total_value_at_risk_inr: float | None = None
     seismic_zone: Literal["II", "III", "IV", "V"] = "II"
+    # Coverage selection only — descriptive, not scored in this prototype.
     rsmd_cover: bool | None = None
     terrorism_cover: bool | None = None
     earthquake_cover: bool | None = None
@@ -84,11 +78,6 @@ class PropertySubmission(BaseModel):
     submission_date: str
 
 
-class UWDecision(BaseModel):
-    decision: str
-    rationale: str
-
-
 def decision_from_score(score: int) -> str:
     if 0 <= score <= 30:
         return "Accept"
@@ -105,21 +94,3 @@ def indicative_product_segment(total_value_at_risk_inr: float) -> str:
     if total_value_at_risk_inr <= 500_000_000:
         return "Bharat Laghu Udyam Suraksha"
     return "Larger-risk/commercial property segment"
-
-
-def build_default_state() -> dict[str, Any]:
-    return {
-        "property_id": "",
-        "raw_input": {},
-        "image_path": None,
-        "extracted_features": {},
-        "guideline_chunks": [],
-        "risk_score": 0,
-        "risk_flags": [],
-        "risk_breakdown": {},
-        "prototype_mitigation_model": {},
-        "comparables": [],
-        "decision": "Accept",
-        "rationale": "",
-        "memo_markdown": "",
-    }

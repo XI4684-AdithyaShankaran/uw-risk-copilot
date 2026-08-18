@@ -131,22 +131,76 @@ def test_prototype_mitigation_fire_alarm():
     assert result["prototype_mitigation_model"]["mitigation_benefits"] == [{"factor": "fire_alarm", "benefit": 20}]
 
 
-def test_prototype_mitigation_flood_protection():
-    features = mitigation_features()
-    features["flood_protection"] = True
-    result = risk_score_calculator(features)
-    assert result["score"] == 0
-    assert result["prototype_mitigation_model"]["mitigation_benefit"] == 25
+def test_prototype_mitigation_flood_protection_only_in_flood_zone():
+    """flood_protection has benefit=25 and reduces cat_score only when cat_zone==Flood."""
+    base = mitigation_features()
+
+    # non-flood zone: benefit must be 0, adj_view must not change
+    wind_no_fp = risk_score_calculator({**base, "cat_zone": "Wind", "flood_protection": False})
+    wind_fp    = risk_score_calculator({**base, "cat_zone": "Wind", "flood_protection": True})
+    assert wind_fp["prototype_mitigation_model"]["mitigation_benefit"] == 0
+    assert wind_fp["prototype_mitigation_model"]["risk_adjusted_view"] == wind_no_fp["prototype_mitigation_model"]["risk_adjusted_view"]
+    fp_benefit_wind = next((x["benefit"] for x in wind_fp["prototype_mitigation_model"]["mitigation_benefits"] if x["factor"]=="flood_protection"), None)
+    assert fp_benefit_wind == 0
+
+    # flood zone: benefit must be 20 (consistent with cat_score reduction of 20), adj_view must decrease
+    flood_no_fp = risk_score_calculator({**base, "cat_zone": "Flood", "flood_protection": False})
+    flood_fp    = risk_score_calculator({**base, "cat_zone": "Flood", "flood_protection": True})
+    assert flood_fp["prototype_mitigation_model"]["mitigation_benefit"] == 20
+    assert flood_fp["prototype_mitigation_model"]["risk_adjusted_view"] < flood_no_fp["prototype_mitigation_model"]["risk_adjusted_view"]
+    fp_benefit_flood = next((x["benefit"] for x in flood_fp["prototype_mitigation_model"]["mitigation_benefits"] if x["factor"]=="flood_protection"), None)
+    assert fp_benefit_flood == 20
 
 
 def test_prototype_mitigation_combined_and_roof_age_adjustments():
     features = mitigation_features()
+    # flood_protection benefit is 0 outside flood zone; only sprinkler+fire_alarm contribute
     features.update({"sprinkler_system": "Y", "fire_alarm": True, "flood_protection": True, "roof_age_years": 25})
     result = risk_score_calculator(features)
     model = result["prototype_mitigation_model"]
     assert result["score"] == 15
-    assert model["mitigation_benefit"] == 85
-    assert {item["factor"] for item in model["mitigation_benefits"]} == {"sprinkler", "fire_alarm", "flood_protection"}
+    assert model["mitigation_benefit"] == 60  # sprinkler(40) + fire_alarm(20); flood_protection=0 for non-flood zone
+    fp_benefit = next((x["benefit"] for x in model["mitigation_benefits"] if x["factor"]=="flood_protection"), None)
+    assert fp_benefit == 0
     assert {item["factor"]: item["adjustment"] for item in model["protection_adjustments"]} == {
-        "sprinkler": -40, "fire_alarm": -20, "flood_protection": -25, "roof_age": 2,
+        "sprinkler": -40, "fire_alarm": -20, "roof_age": 2,
     }
+
+
+def test_hail_cat_zone_captured_not_scored():
+    """Hail is a named STFI peril (IRDAI SFSP Tempest); captured as exposure flag, not scored."""
+    base = mitigation_features()
+    result_none = risk_score_calculator({**base, "cat_zone": "None"})
+    result_hail = risk_score_calculator({**base, "cat_zone": "Hail"})
+    assert result_hail["score"] == result_none["score"], "Hail must not change authoritative score"
+    assert result_hail["breakdown"]["cat_zone"] == 0
+    assert "moderate_cat_zone_captured" in result_hail["flags"]
+    assert "high_cat_zone_exposure" not in result_hail["flags"]
+
+
+def test_earthquake_cat_zone_captured_not_scored():
+    """Earthquake is a named IRDAI SFSP peril; captured as exposure flag, not scored."""
+    base = mitigation_features()
+    result_none = risk_score_calculator({**base, "cat_zone": "None"})
+    result_eq   = risk_score_calculator({**base, "cat_zone": "Earthquake"})
+    assert result_eq["score"] == result_none["score"], "Earthquake cat_zone must not change authoritative score"
+    assert result_eq["breakdown"]["cat_zone"] == 0
+    assert "moderate_cat_zone_captured" in result_eq["flags"]
+    assert "high_cat_zone_exposure" not in result_eq["flags"]
+
+
+def test_earthquake_cat_seismic_zone_no_double_count():
+    """Earthquake CAT and seismic zone IV score independently: seismic adds, earthquake does not."""
+    base = mitigation_features()
+    base_score = risk_score_calculator({**base, "cat_zone": "None", "seismic_zone": "II"})["score"]
+    result = risk_score_calculator({**base, "cat_zone": "Earthquake", "seismic_zone": "IV"})
+    # Only seismic_zone IV adds +15; earthquake cat_zone adds 0
+    assert result["breakdown"]["cat_zone"] == 0
+    assert result["breakdown"]["seismic_zone"] == 15
+    assert result["score"] == base_score + 15
+    assert "moderate_cat_zone_captured" in result["flags"]
+    assert "high_seismic_zone" in result["flags"]
+
+
+def result_none_score(base: dict) -> int:
+    return risk_score_calculator({**base, "cat_zone": "None"})["score"]

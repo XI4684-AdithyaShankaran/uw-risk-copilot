@@ -1,4 +1,6 @@
 __pycache__/
+.vscode/
+.pytest_cache/
 *.pyc
 .venv/
 .env
@@ -7,4 +9,5 @@ __pycache__/
 *.db
 server.log
 data/db/
+data/backups
 data/vectorstore/

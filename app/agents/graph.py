@@ -1,18 +1,15 @@
 from __future__ import annotations
 
-from typing import Any, Literal
+from typing import Literal
 
 from langgraph.graph import END, StateGraph
 
 from app.agents.state import UWState
-from app.config import GEMINI_API_KEY, GEMINI_MODEL_NAME
 from app.schemas import decision_from_score
-from app.toon import toon_encode
 from app.tools.comparables import comparable_lookup
 from app.tools.rag_lookup import rag_lookup
 from app.tools.risk_calculator import risk_score_calculator
 from app.tools.vision_extract import extract_property_features
-from google import genai
 
 
 def intake_node(state: UWState) -> UWState:
@@ -54,77 +51,17 @@ def fetch_comparables_node(state: UWState) -> UWState:
 
 
 def synthesize_decision_node(state: UWState) -> UWState:
-    threshold_decision = decision_from_score(state["risk_score"])
-    guidelines_toon = toon_encode([{"chunk": chunk} for chunk in state.get("guideline_chunks", [])])
-    comparables_toon = toon_encode(state.get("comparables", [])) if state.get("comparables") else "[]"
-
-    prompt = f"""
-You are the underwriting risk decision synthesis layer.
-Your job is to justify and narrate the threshold-based decision, not replace it.
-
-Deterministic threshold decision: {threshold_decision}
-Property risk score: {state['risk_score']}
-Risk flags: {', '.join(state.get('risk_flags', [])) or 'none'}
-
-Relevant underwriting guideline excerpts:
-{guidelines_toon}
-
-Comparable properties:
-{comparables_toon}
-
-Return valid JSON only with exactly these keys:
-- decision
-- rationale
-
-Rules:
-1. decision must be exactly the deterministic threshold decision.
-2. rationale must be 2-3 sentences explaining the observed risk factors and why this score fits the threshold.
-3. Keep tone analytical and underwriting-focused.
-"""
-
-    # Gracefully fall back if API key is not available
-    if GEMINI_API_KEY:
-        print("[synthesize_decision_node] BEFORE: Attempting Gemini API call with GEMINI_API_KEY set")
-        try:
-            print(f"[synthesize_decision_node] Creating genai.Client with API key...")
-            client = genai.Client(api_key=GEMINI_API_KEY)
-            print(f"[synthesize_decision_node] Calling models.generate_content()")
-            response = client.models.generate_content(model=GEMINI_MODEL_NAME, contents=prompt)
-            text = getattr(response, "text", None) or str(response)
-            cleaned = text.strip()
-            if cleaned.startswith("```"):
-                cleaned = cleaned.strip("`\n ")
-                if cleaned.lower().startswith("json"):
-                    cleaned = cleaned[4:].strip()
-            parsed = {}
-            try:
-                import json
-                parsed = json.loads(cleaned)
-            except Exception:
-                parsed = {"decision": threshold_decision, "rationale": "Risk factors and score align with the deterministic underwriting threshold."}
-
-            state["decision"] = parsed.get("decision", threshold_decision)
-            state["rationale"] = parsed.get("rationale", "Risk factors and score align with the deterministic underwriting threshold.")
-            print(f"[synthesize_decision_node] AFTER: Gemini call succeeded, decision={state['decision']}")
-        except (ValueError, Exception) as e:
-            # API key invalid or not available, use defaults
-            print(f"[synthesize_decision_node] EXCEPTION CAUGHT: {type(e).__name__}: {str(e)}")
-            state["decision"] = threshold_decision
-            state["rationale"] = "Risk factors and score align with the deterministic underwriting threshold."
-            print(f"[synthesize_decision_node] Using fallback decision={state['decision']}")
-    else:
-        # No API key, use defaults
-        print("[synthesize_decision_node] BEFORE: GEMINI_API_KEY is not set, using defaults")
-        state["decision"] = threshold_decision
-        state["rationale"] = "Risk factors and score align with the deterministic underwriting threshold."
-        print(f"[synthesize_decision_node] AFTER: Using fallback decision={state['decision']}")
+    # Deterministic authority: Python rules set the decision; AI only explains.
+    state["decision"] = decision_from_score(state["risk_score"])
     return state
 
 
 def generate_report_node(state: UWState) -> UWState:
     from app.agents.report_agent import generate_memo
-
-    state["memo_markdown"] = generate_memo(state)
+    memo = generate_memo(state)
+    state["memo_json"] = memo
+    # Surface rationale for downstream consumers (empty string when AI unavailable)
+    state["rationale"] = memo.get("rationale", "") if memo else ""
     return state
 
 
@@ -178,7 +115,7 @@ def run_graph(raw_input: dict, image_path: str | None = None) -> UWState:
         "comparables": [],
         "decision": "Accept",
         "rationale": "",
-        "memo_markdown": "",
+        "memo_json": {},
     }
     result = graph.invoke(initial)
     return result

@@ -2,6 +2,20 @@ from __future__ import annotations
 
 import math
 
+# Authoritative scoring point values — prototype calibration, not filed rating rules
+_ROOF_OLD_SCORE = 25        # roof > 30 years
+_ROOF_AGING_SCORE = 15      # roof > 20 years
+_FRAME_SCORE = 10           # combustible frame construction
+_NO_SPRINKLER_HH = 10       # warehouse/industrial without sprinkler
+_HIGH_CAT_SCORE = 20        # primary CAT perils (Wind/Flood/Wildfire)
+_HIGH_SEISMIC_SCORE = 15    # seismic zone IV or V
+_COASTAL_SCORE = 15         # < 1 mile to coast
+_WILDLAND_SCORE = 15        # < 1 mile to wildland-urban interface
+_ADVERSE_LOSS_SCORE = 15    # > 2 prior claims in 5 years
+_HIGH_TIV_SCORE = 5         # TIV > ₹20M
+# Flood protection declared benefit; must equal actual cat_score reduction for consistency
+_FLOOD_PROTECTION_BENEFIT = 20
+
 
 def _clamp(value: float, minimum: int = 0, maximum: int = 100) -> int:
     return max(minimum, min(maximum, round(value)))
@@ -31,22 +45,24 @@ def _risk_level(score: int) -> str:
     return "Low"
 
 
-def _recommendation(score: int) -> str:
+def _indicative_risk_action(score: int) -> str:
+    """Indicative risk action for the live preview — not an authoritative underwriting decision."""
     if score >= 85:
-        return "Decline"
+        return "High Risk"
     if score >= 30:
-        return "Review"
-    return "Accept"
+        return "Elevated Risk"
+    return "Standard Risk"
 
 
 def prototype_mitigation_model(features: dict, authoritative_score: int) -> dict:
     """Return teammate-style live risk visualization data from Python."""
     roof_age = _safe_int(features.get("roof_age_years"))
-    year_built = _safe_int(features.get("year_built"), 2000)
+    _yb = features.get("year_built")
+    year_built = _safe_int(_yb) if _yb is not None else None
     current_year = _safe_int(features.get("current_year"), 2026)
     square_footage = max(_safe_float(features.get("square_footage"), 1000), 1)
     construction_type = str(features.get("construction_type") or "")
-    occupancy_type = str(features.get("occupancy_type") or "Office")
+    occupancy_type = str(features.get("occupancy_type") or "")
     cat_zone = str(features.get("cat_zone") or "None")
     seismic_zone = str(features.get("seismic_zone") or "II")
     sprinkler_enabled = str(features.get("sprinkler_system") or "").upper() == "Y"
@@ -88,8 +104,11 @@ def prototype_mitigation_model(features: dict, authoritative_score: int) -> dict
     protection_score += min(20, round((roof_age - 20) / 2)) if roof_age > 20 else 0
     protection_score = _clamp(protection_score)
     claims = _safe_int(features.get("prior_claims_count_5yr"))
-    loss_history_score = _clamp(claims * 12 + math.log10(_safe_float(features.get("prior_claims_total_amount"), 0) + 1) * 8)
-    age_score = _clamp(max(0, current_year - year_built))
+    # Clamp claim amount to non-negative before log10 to prevent domain errors
+    claim_amount = max(0.0, _safe_float(features.get("prior_claims_total_amount"), 0))
+    loss_history_score = _clamp(claims * 12 + math.log10(claim_amount + 1) * 8)
+    # age_score is an indicative visualization dimension; 0 when year_built is not supplied
+    age_score = _clamp(max(0, current_year - year_built)) if year_built is not None else 0
     climate_score = _clamp(30 + (cat_score * 0.35))
 
     risk_profile = [
@@ -120,8 +139,12 @@ def prototype_mitigation_model(features: dict, authoritative_score: int) -> dict
         benefits.append({"factor": "fire_alarm", "benefit": 20})
         adjustments.append({"factor": "fire_alarm", "adjustment": -20})
     if features.get("flood_protection") is True:
-        benefits.append({"factor": "flood_protection", "benefit": 25})
-        adjustments.append({"factor": "flood_protection", "adjustment": -25})
+        if cat_zone == "Flood":
+            # flood_protection reduces cat_score only in flood-zone exposure
+            benefits.append({"factor": "flood_protection", "benefit": _FLOOD_PROTECTION_BENEFIT})
+            adjustments.append({"factor": "flood_protection", "adjustment": -_FLOOD_PROTECTION_BENEFIT})
+        else:
+            benefits.append({"factor": "flood_protection", "benefit": 0})
     if roof_age > 20:
         adjustments.append({"factor": "roof_age", "adjustment": min(20, round((roof_age - 20) / 2))})
     for factor in ("generator", "drainage", "security_protective_safeguards"):
@@ -138,7 +161,7 @@ def prototype_mitigation_model(features: dict, authoritative_score: int) -> dict
         "mitigation_benefit": sum(int(item["benefit"]) for item in benefits),
         "risk_adjusted_view": risk_adjusted_view,
         "risk_level": _risk_level(risk_adjusted_view),
-        "recommendation": _recommendation(risk_adjusted_view),
+        "recommendation": _indicative_risk_action(risk_adjusted_view),
         "mitigation_benefits": benefits,
         "protection_adjustments": adjustments,
         "risk_profile": risk_profile,
@@ -165,57 +188,62 @@ def risk_score_calculator(features: dict) -> dict:
 
     roof_age = _safe_int(features.get("roof_age_years"))
     if roof_age > 30:
-        score += 25
-        breakdown["roof_age"] = 25
+        score += _ROOF_OLD_SCORE
+        breakdown["roof_age"] = _ROOF_OLD_SCORE
         flags.append("roof_replacement_likely")
     elif roof_age > 20:
-        score += 15
-        breakdown["roof_age"] = 15
+        score += _ROOF_AGING_SCORE
+        breakdown["roof_age"] = _ROOF_AGING_SCORE
         flags.append("aging_roof")
 
     if features.get("construction_type") == "Frame":
-        score += 10
-        breakdown["construction"] = 10
+        score += _FRAME_SCORE
+        breakdown["construction"] = _FRAME_SCORE
         flags.append("combustible_construction")
 
     sprinkler = str(features.get("sprinkler_system", "")).upper()
     occupancy = str(features.get("occupancy_type", ""))
     if sprinkler == "N" and occupancy in ("Warehouse", "Industrial"):
-        score += 10
-        breakdown["sprinkler"] = 10
+        score += _NO_SPRINKLER_HH
+        breakdown["sprinkler"] = _NO_SPRINKLER_HH
         flags.append("no_sprinkler_high_hazard_occupancy")
 
     cat_zone = features.get("cat_zone")
+    # Primary CAT perils only → authoritative scoring (Wind/Flood/Wildfire are well-calibrated)
     if cat_zone in ("Wildfire", "Flood", "Wind"):
-        score += 20
-        breakdown["cat_zone"] = 20
+        score += _HIGH_CAT_SCORE
+        breakdown["cat_zone"] = _HIGH_CAT_SCORE
         flags.append("high_cat_zone_exposure")
+    # Hail/Earthquake: captured as exposure indicator; no authoritative score (no calibrated rule)
+    elif cat_zone in ("Hail", "Earthquake"):
+        flags.append("moderate_cat_zone_captured")
 
     if features.get("seismic_zone", "II") in ("IV", "V"):
-        score += 15
-        breakdown["seismic_zone"] = 15
+        score += _HIGH_SEISMIC_SCORE
+        breakdown["seismic_zone"] = _HIGH_SEISMIC_SCORE
         flags.append("high_seismic_zone")
 
-    distance_to_coast_miles = features.get("distance_to_coast_miles")
-    if distance_to_coast_miles is not None and float(distance_to_coast_miles) < 1:
-        score += 15
-        breakdown["coastal"] = 15
+    # Use _safe_float with explicit non-negative guard to prevent bad inputs triggering flags
+    _coast = _safe_float(features.get("distance_to_coast_miles"), 99)
+    if features.get("distance_to_coast_miles") is not None and 0 <= _coast < 1:
+        score += _COASTAL_SCORE
+        breakdown["coastal"] = _COASTAL_SCORE
         flags.append("coastal_wind_surge_exposure")
 
-    distance_to_fire_zone_miles = features.get("distance_to_fire_zone_miles")
-    if distance_to_fire_zone_miles is not None and float(distance_to_fire_zone_miles) < 1:
-        score += 15
-        breakdown["wildland"] = 15
+    _firezone = _safe_float(features.get("distance_to_fire_zone_miles"), 99)
+    if features.get("distance_to_fire_zone_miles") is not None and 0 <= _firezone < 1:
+        score += _WILDLAND_SCORE
+        breakdown["wildland"] = _WILDLAND_SCORE
         flags.append("wildland_urban_interface")
 
     if _safe_int(features.get("prior_claims_count_5yr")) > 2:
-        score += 15
-        breakdown["loss_history"] = 15
+        score += _ADVERSE_LOSS_SCORE
+        breakdown["loss_history"] = _ADVERSE_LOSS_SCORE
         flags.append("adverse_loss_history")
 
     if _safe_float(features.get("tiv")) > 20_000_000:
-        score += 5
-        breakdown["tiv"] = 5
+        score += _HIGH_TIV_SCORE
+        breakdown["tiv"] = _HIGH_TIV_SCORE
         flags.append("high_tiv_concentration")
 
     score = min(score, 100)

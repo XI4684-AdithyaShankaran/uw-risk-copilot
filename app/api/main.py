@@ -6,17 +6,19 @@ from typing import Any
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 
 from app.config import DB_PATH
 from app.db import fetch_history, fetch_submission_detail, init_db, save_submission
-from app.schemas import indicative_product_segment
+from app.schemas import decision_from_score, indicative_product_segment
+from app.reports import build_submission_pdf
 
 app = FastAPI(title="UW Risk Copilot")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://localhost:5173"],
+    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000", "http://localhost:5173", "http://127.0.0.1:5173"],
+    allow_origin_regex=r"^http://(localhost|127\.0\.0\.1):(3000|5173)$",
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -209,8 +211,9 @@ async def submit_underwriting(
     result["prototype_mitigation_total"] = model.get("mitigation_benefit", 0)
     result["positive_factors"] = model.get("positive_factors", [])
     result["risk_profile"] = model.get("risk_profile", [])
-    result["ai_memo_status"] = "Available" if result.get("memo_markdown") else "Unavailable"
-    result["ai_memo_reason"] = result.get("memo_error") if not result.get("memo_markdown") else ""
+    result["ai_memo_status"] = result.get("ai_memo_status") or ("Available" if result.get("memo_json") else "Unavailable")
+    result["ai_memo_reason"] = result.get("memo_error") if result["ai_memo_status"] != "Available" else ""
+    result["memo_json"] = result.get("memo_json", {})
     print(f"FINAL_EXTRACTED_FEATURE_KEYS={sorted(result.get('extracted_features', {}).keys())}")
     saved = save_submission(result)
     result["id"] = saved.get("id")
@@ -271,9 +274,12 @@ async def preview_underwriting(request: Request) -> dict[str, Any]:
     from app.tools.risk_calculator import risk_score_calculator
     score_data = risk_score_calculator(features)
     model = score_data["prototype_mitigation_model"]
+    auth_score = score_data["score"]
     return {
-        "risk_score": score_data["score"],
-        "authoritative_risk_score": score_data["score"],
+        "risk_score": auth_score,
+        "authoritative_risk_score": auth_score,
+        "authoritative_decision": decision_from_score(auth_score),
+        "policy_type": indicative_product_segment(preview_tiv) if preview_tiv is not None else None,
         "risk_flags": score_data["flags"],
         "risk_breakdown": score_data["breakdown"],
         "prototype_mitigation_model": model,
@@ -295,3 +301,19 @@ def history_detail(submission_id: int) -> dict[str, Any]:
     if detail is None:
         raise HTTPException(status_code=404, detail="Submission not found")
     return detail
+
+
+@app.get("/underwrite/history/{submission_id}/report.pdf")
+def history_report(submission_id: int) -> Response:
+    detail = fetch_submission_detail(submission_id)
+    if detail is None:
+        raise HTTPException(status_code=404, detail="Submission not found")
+    try:
+        pdf = build_submission_pdf(detail)
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f"Report generation unavailable: {type(exc).__name__}: {exc}") from exc
+    return Response(
+        content=pdf,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="underwriting-{submission_id}.pdf"'},
+    )

@@ -3,6 +3,15 @@ from __future__ import annotations
 from typing import TypedDict
 
 
+class MemoState(TypedDict):
+    property_summary: list[str]
+    key_risk_factors: list[str]
+    coverage_review: list[str]
+    decision: str
+    rationale: str
+    suggested_next_steps: list[str]
+
+
 class UWState(TypedDict):
     property_id: str
     raw_input: dict
@@ -15,5 +24,5 @@ class UWState(TypedDict):
     prototype_mitigation_model: dict
     comparables: list[dict]
     decision: str
-    rationale: str
-    memo_markdown: str
+    rationale: str  # propagated from memo_json["rationale"] after report generation
+    memo_json: dict  # MemoState shape when AI succeeds, {} when unavailable
