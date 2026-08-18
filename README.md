@@ -85,6 +85,8 @@ The SQLite schema and reference-property table initialise automatically on first
 | `Bandra-Kurla-Complex-Mumbai.jpg` | [Wikimedia Commons BKC skyline](https://commons.wikimedia.org/wiki/File:Bandra-Kurla-Complex-Mumbai-Maharashtra-India.jpg) |
 | `ILFS-Bandra-Kurla-Complex-Mumbai.jpg` | [Wikimedia Commons BKC office building](https://commons.wikimedia.org/wiki/File:IL%26FS_-_Bandra_Kurla_Complex,_Mumbai.jpg), used by the Mumbai Accept demo |
 | `Cotton-Green-Mill-Mumbai.jpg` | [Public-domain Wikimedia Commons image](https://commons.wikimedia.org/wiki/File:Cotton_green_mill_mumbai.jpg), “Cotton mill textile mill, Colaba,” dated 1910; used by the Auto-Decline demo |
+| `Lulu-Mall-Kochi.jpg` | [Wikimedia Commons LuLu Mall Kochi exterior](https://commons.wikimedia.org/wiki/File:LuLu_Mall_Kochi.jpg), used by the Refer demo |
+| `Crawford-Market-Mumbai.jpg` | [Wikimedia Commons Crawford Market image](https://commons.wikimedia.org/wiki/File:Crawford_Market_03.jpg), used by the Decline (mitigation possible) demo |
 
 Submitted images are persisted with the submission, analyzed by Vision, displayed in the result workflow, and embedded in the generated PDF. Image observations remain non-authoritative evidence; manual/scored facts are controlled separately.
 
@@ -165,3 +167,4 @@ Validation rules (mechanical, not NLP):
 - RAG grounded to one generic commercial-property guidelines PDF, not carrier-specific documents
 - Seismic zone II/III scored equally (0 pts), IV/V scored equally (+15 pts) — prototype 2-tier simplification; BIS IS 1893 defines four distinct zones
 - The PoC demonstrates workflow speed, consistency, evidence capture, and decision support. It does not empirically prove loss-ratio reduction or pricing accuracy without longitudinal insurer outcomes
+- Real property names, locations, historic years, and image provenance are public-source facts; claims, roof age, insured values, protection controls, and coverage selections used to exercise decision bands are explicit demo assumptions

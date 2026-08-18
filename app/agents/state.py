@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TypedDict
+from typing import NotRequired, TypedDict
 
 
 class MemoState(TypedDict):
@@ -26,3 +26,6 @@ class UWState(TypedDict):
     decision: str
     rationale: str  # propagated from memo_json["rationale"] after report generation
     memo_json: dict  # MemoState shape when AI succeeds, {} when unavailable
+    ai_memo_status: NotRequired[str]
+    ai_memo_reason: NotRequired[str]
+    memo_error: NotRequired[str]
